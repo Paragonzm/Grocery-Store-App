@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Grocery Cart System</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
+  <style>
+    body {
+      background: linear-gradient(to right, #f9f9f9, #e6f0ff);
+      font-family: 'Segoe UI', sans-serif;
+      padding: 2rem;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+
+    .header h1 {
+      font-weight: 600;
+      color: #1e3a8a;
+    }
+
+    .card {
+      border: none;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+    }
+
+    .btn-primary, .btn-success, .btn-danger {
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+
+    .highlight-editing {
+      background-color: #fff3cd !important;
+    }
+
+    .toast-container {
+      position: fixed;
+      top: 1rem;
+      right: 1rem;
+      z-index: 9999;
+    }
+
+    .form-control:focus, .form-select:focus {
+      border-color: #1e3a8a;
+      box-shadow: 0 0 0 0.2rem rgba(30, 58, 138, 0.25);
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <div class="header">
+      <h1><i class="bi bi-cart4"></i> Grocery Cart Manager</h1>
+      <p class="text-muted">Add, edit, or delete grocery items easily.</p>
+    </div>
+
+    <!-- Toasts -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- Form Card -->
+    <div class="card mb-4">
+      <div class="card-body">
+        <h5 class="card-title">Add / Edit Product</h5>
+        <form id="addProductForm" class="row g-3">
+          <div class="col-md-4">
+            <input type="text" class="form-control" id="productName" placeholder="Product Name" required>
+          </div>
+          <div class="col-md-4">
+            <input type="number" class="form-control" id="pricePerUnit" placeholder="Price per Unit (₹)" step="0.01" min="0.01" required>
+          </div>
+          <div class="col-md-4">
+            <select class="form-select" id="uomSelect" required>
+              <option value="">Select Unit</option>
+            </select>
+          </div>
+          <div class="col-12 d-flex align-items-center">
+            <button type="submit" class="btn btn-success"><i class="bi bi-plus-circle"></i> Add Product</button>
+            <button type="button" id="cancelEditBtn" class="btn btn-secondary ms-2 d-none" onclick="cancelEdit()">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Product Table Card -->
+    <div class="card">
+      <div class="card-body">
+        <h5 class="card-title">Product List</h5>
+        <div class="table-responsive">
+          <table class="table table-striped table-hover align-middle" id="productTable">
+            <thead class="table-dark">
+              <tr>
+                <th>ID</th>
+                <th>Product</th>
+                <th>Unit</th>
+                <th>Price (₹)</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              <!-- Data gets inserted here -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bootstrap JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script>
+    let editingProductId = null;
+    let editingRow = null;
+
+    function showToast(message, type = 'success') {
+      const toastId = 'toast' + Date.now();
+      const toastHTML = `
+        <div id="${toastId}" class="toast align-items-center text-bg-${type} border-0 mb-2" role="alert" aria-live="assertive" aria-atomic="true">
+          <div class="d-flex">
+            <div class="toast-body">${message}</div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+          </div>
+        </div>
+      `;
+      const container = document.getElementById('toastContainer');
+      container.insertAdjacentHTML('beforeend', toastHTML);
+      new bootstrap.Toast(document.getElementById(toastId)).show();
+    }
+
+    async function loadProducts() {
+      try {
+        const response = await fetch('http://127.0.0.1:5000/getProducts');
+        const data = await response.json();
+        const tableBody = document.querySelector('#productTable tbody');
+        tableBody.innerHTML = '';
+
+        data.forEach(product => {
+          const row = document.createElement('tr');
+          row.id = `row-${product.product_id}`;
+          row.innerHTML = `
+            <td>${product.product_id}</td>
+            <td>${product.name}</td>
+            <td>${product.uom_name}</td>
+            <td>₹${product.price_per_unit.toFixed(2)}</td>
+            <td>
+              <button class="btn btn-sm btn-primary me-1" onclick="startEdit(${product.product_id})"><i class="bi bi-pencil-square"></i></button>
+              <button class="btn btn-sm btn-danger" onclick="deleteProduct(${product.product_id})"><i class="bi bi-trash3"></i></button>
+            </td>
+          `;
+          tableBody.appendChild(row);
+        });
+      } catch (err) {
+        showToast('Error loading products', 'danger');
+        console.error(err);
+      }
+    }
+
+    async function loadUOMs() {
+      try {
+        const res = await fetch('http://127.0.0.1:5000/getUOMs');
+        const data = await res.json();
+        const select = document.getElementById('uomSelect');
+        select.innerHTML = '<option value="">Select Unit</option>';
+        data.forEach(uom => {
+          const option = document.createElement('option');
+          option.value = uom.uom_id;
+          option.textContent = uom.uom_name;
+          select.appendChild(option);
+        });
+      } catch (err) {
+        showToast('Failed to load units', 'danger');
+        console.error(err);
+      }
+    }
+
+    document.getElementById('addProductForm').addEventListener('submit', async function (e) {
+      e.preventDefault();
+      const name = document.getElementById('productName').value.trim();
+      const price = parseFloat(document.getElementById('pricePerUnit').value);
+      const uom_id = parseInt(document.getElementById('uomSelect').value);
+
+      if (!name || isNaN(price) || price <= 0 || isNaN(uom_id)) {
+        showToast('Please fill in all fields correctly', 'danger');
+        return;
+      }
+
+      const payload = { product_name: name, price_per_unit: price, uom_id };
+
+      const url = editingProductId
+        ? `http://127.0.0.1:5000/updateProduct/${editingProductId}`
+        : 'http://127.0.0.1:5000/insertProduct';
+      const method = editingProductId ? 'PUT' : 'POST';
+
+      try {
+        const response = await fetch(url, {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const result = await response.json();
+        if (editingProductId) {
+          showToast('Product updated');
+        } else {
+          showToast(`Product added (ID: ${result.product_id})`);
+        }
+
+        cancelEdit();
+        loadProducts();
+      } catch (err) {
+        console.error(err);
+        showToast('Operation failed', 'danger');
+      }
+    });
+
+    async function deleteProduct(id) {
+      if (!confirm('Are you sure you want to delete this product?')) return;
+      try {
+        await fetch('http://127.0.0.1:5000/deleteProduct', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ product_id: id })
+        });
+        showToast('Product deleted');
+        loadProducts();
+      } catch (err) {
+        console.error(err);
+        showToast('Failed to delete product', 'danger');
+      }
+    }
+
+    async function startEdit(productId) {
+      try {
+        const response = await fetch(`http://127.0.0.1:5000/getProduct/${productId}`);
+        const product = await response.json();
+        if (!product) throw new Error();
+
+        document.getElementById('productName').value = product.name;
+        document.getElementById('pricePerUnit').value = product.price_per_unit;
+        document.getElementById('uomSelect').value = product.uom_id;
+
+        editingProductId = productId;
+        editingRow = document.getElementById(`row-${productId}`);
+        if (editingRow) editingRow.classList.add('highlight-editing');
+        document.getElementById('cancelEditBtn').classList.remove('d-none');
+        document.querySelector('#addProductForm button[type="submit"]').innerHTML = '<i class="bi bi-save2"></i> Update Product';
+
+      } catch (err) {
+        showToast('Failed to load product details', 'danger');
+        console.error(err);
+      }
+    }
+
+    function cancelEdit() {
+      editingProductId = null;
+      if (editingRow) editingRow.classList.remove('highlight-editing');
+      editingRow = null;
+
+      document.getElementById('addProductForm').reset();
+      document.querySelector('#addProductForm button[type="submit"]').innerHTML = '<i class="bi bi-plus-circle"></i> Add Product';
+      document.getElementById('cancelEditBtn').classList.add('d-none');
+    }
+
+    window.onload = () => {
+      loadProducts();
+      loadUOMs();
+    };
+  </script>
+</body>
+</html>
